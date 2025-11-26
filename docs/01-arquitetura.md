@@ -8,7 +8,7 @@ Este diagrama situa o sistema no mundo, mostrando quem o utiliza.
 ![Diagrama de Contexto](./assets/c4-context.png)
 
 ### Nível 2: Diagrama de Containers
-Este diagrama mostra as aplicações, banco de dados e serviços que compõem o sistema.
+Este diagrama mostra a decomposição do sistema em serviços independentes.
 
 ![Diagrama de Containers](./assets/c4-container.png)
 
@@ -16,36 +16,33 @@ Este diagrama mostra as aplicações, banco de dados e serviços que compõem o 
 
 ## 2. Registro de Decisões Arquiteturais (ADRs)
 
-### ADR-001: Adoção de Arquitetura Monolítica em Camadas
+### ADR-001: Adoção de Arquitetura de Microsserviços
 * **Status:** Aceito.
-* **Contexto:** O projeto é uma aplicação de gestão de filmes com requisitos claros de CRUD (Create, Read, Update, Delete) e relacionamentos relacionais fortes (Filmes, Atores, Diretores). A equipe precisa de agilidade no desenvolvimento e simplicidade no deploy.
-* **Decisão:** Optou-se por um **Monólito em Camadas (Layered Monolith)**. A estrutura de pastas do backend (`src/controllers`, `src/services`, `src/models`) confirma que o código é organizado por função técnica, e não modularizado por domínio (Modulith) ou separado em microsserviços.
+* **Contexto:** O sistema está crescendo e diferentes domínios (Catálogo vs Identidade) possuem ciclos de vida e requisitos de escala distintos. O time deseja implantar funcionalidades de catálogo sem arriscar a estabilidade do login.
+* **Decisão:** Optou-se por dividir o backend em serviços independentes:
+    1.  **Auth Service:** Responsável por cadastro e autenticação de usuários.
+    2.  **Catalog Service:** Responsável pela gestão de filmes, atores e favoritos.
 * **Consequências:**
-    * (+) **Positivo:** Simplicidade para desenvolver, testar e implantar (apenas um container de backend).
-    * (+) **Positivo:** Baixa latência interna, pois as chamadas entre módulos (ex: Usuário chamando Filmes) são chamadas de função em memória, não chamadas de rede.
-    * (-) **Negativo:** Pode crescer desordenadamente se as barreiras entre as camadas (Controller -> Service -> Model) não forem respeitadas.
+    * (+) **Escalabilidade Independente:** Podemos replicar apenas o serviço de Catálogo (que tem mais leitura) sem gastar recursos com o serviço de Auth.
+    * (+) **Isolamento de Falhas:** Se o Catálogo cair, o usuário ainda consegue logar (e ver outras partes do sistema futuramente).
+    * (-) **Complexidade Operacional:** Necessidade de orquestrar múltiplos containers e gerenciar rotas no Gateway (Nginx).
 
-### ADR-002: Estratégia de Cache com Redis
-* **Status:** Aceito.
-* **Contexto:** Operações de leitura de catálogo (listar filmes) costumam ser muito mais frequentes que escritas. É necessário garantir alta performance na listagem.
-* **Decisão:** Utilização do **Redis** como camada de cache.
+### ADR-002: Banco de Dados Compartilhado (Shared Database)
+* **Status:** Aceito (Temporário).
+* **Contexto:** Para simplificar a migração do monólito para microsserviços, optou-se por não dividir o banco de dados fisicamente neste momento.
+* **Decisão:** Ambos os serviços (`auth` e `catalog`) conectam-se à mesma instância MySQL.
 * **Consequências:**
-    * (+) **Positivo:** Reduz a carga no banco de dados MySQL para consultas repetitivas.
-    * (+) **Positivo:** Melhora o tempo de resposta para o usuário final.
-    * (-) **Negativo:** Adiciona complexidade de infraestrutura (mais um container para gerenciar) e necessidade de estratégia de invalidação de cache.
+    * (+) **Simplicidade:** Não é necessário refatorar queries complexas ou lidar com consistência eventual entre bancos agora.
+    * (-) **Acoplamento:** Alterações de schema em tabelas compartilhadas podem quebrar ambos os serviços.
 
 ---
 
-## 3. Cenários de Qualidade
+## 3. Cenários de Qualidade (Quality Scenarios)
 
-### 🟢 Disponibilidade
-* **Cenário:** O container de banco de dados ou backend pode falhar inesperadamente.
-* **Estratégia:** Uso da diretiva `restart: always` e configuração de `healthcheck` no `docker-compose.yaml` para garantir que o orquestrador (Docker) reinicie serviços travados automaticamente.
+### 🟢 Disponibilidade (Availability)
+* **Cenário:** Falha no serviço de Catálogo.
+* **Estratégia:** O `auth-service` roda em container separado. O login continua funcionando mesmo se o catálogo estiver offline, garantindo que o usuário acesse sua conta (Isolamento de Processos).
 
-### 🚀 Desempenho
-* **Cenário:** Listagem de filmes em horários de pico.
-* **Estratégia:** Implementação de cache distribuído via Redis (`ioredis` no `package.json`) para servir dados frequentes em latência de sub-milissegundos, evitando round-trip ao disco do MySQL.
-
-### 🛠️ Manutenibilidade
-* **Cenário:** Novos desenvolvedores entrando no projeto.
-* **Estratégia:** Uso estrito de **TypeScript** e **ESLint** (presentes nas dependências) para garantir tipagem estática e padronização de código, reduzindo erros em tempo de execução.
+### 🚀 Desempenho (Performance)
+* **Cenário:** Alta demanda de leitura de filmes.
+* **Estratégia:** O `catalog-service` possui cache exclusivo via Redis, aliviando o banco compartilhado. O `auth-service` não compete por conexões do Redis, pois não o utiliza.
