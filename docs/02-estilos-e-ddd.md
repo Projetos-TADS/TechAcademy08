@@ -4,57 +4,43 @@ Detalhamento da modelagem tática e estratégica do sistema sob a ótica do Doma
 
 ## 1. Context Map (Mapa de Contextos)
 
-O sistema, embora implementado como um monólito modular, possui fronteiras lógicas claras entre os domínios de negócio. O diagrama abaixo ilustra os domínios e seus relacionamentos.
+O sistema foi decomposto fisicamente seguindo as fronteiras de domínio identificadas.
 
 ![Context Map](./assets/context-map.png)
+
+* **Relação de Conformidade:** Ambos os contextos compartilham o mesmo banco de dados (Shared Kernel no nível de persistência), o que gera um acoplamento intencional para simplificar a migração.
 
 ---
 
 ## 2. Definição de Bounded Contexts
 
-Baseado na organização das rotas (`src/routes`) e modelos (`src/models`), identificamos 3 principais Contextos Delimitados:
+Cada contexto principal foi promovido a um serviço autônomo:
 
-### A. Contexto de Catálogo (Core Domain)
-É o coração do negócio. Responsável por manter a integridade e consistência do acervo de filmes.
-* **Responsabilidades:** Cadastro, edição e listagem de filmes, atores e diretores.
-* **Módulos no Código:** `Movie`, `Actor`, `Director`, `Cast`, `DirectorMovie`.
-
-### B. Contexto de Identidade (Generic Subdomain)
-Trata de questões transversais de segurança e acesso, necessárias para qualquer sistema moderno.
-* **Responsabilidades:** Registro de usuários, Login (JWT) e Controle de Acesso (Admin vs Usuário Comum).
+### A. Contexto de Identidade (`auth-service`)
+Trata de segurança e gestão de usuários. É a "porta de entrada" lógica para a identificação.
+* **Responsabilidades:** Cadastro de usuários (Sign Up) e Emissão de Tokens de Acesso (Sign In/JWT).
 * **Módulos no Código:** `User`, `Session`.
 
-### C. Contexto de Engajamento (Supporting Subdomain)
-Suporta o negócio aumentando a retenção do usuário através de personalização.
-* **Responsabilidades:** Permitir que usuários salvem filmes para ver depois.
-* **Módulos no Código:** `Favorite`.
+### B. Contexto de Catálogo (`catalog-service`)
+Engloba o Core Domain (Filmes) e o Subdomínio de Suporte (Favoritos).
+* **Responsabilidades:** CRUD de filmes, gestão de elenco (atores/diretores) e listas de favoritos.
+* **Módulos no Código:** `Movie`, `Actor`, `Director`, `Favorite`, `MovieImage`.
+* *Nota:* O `catalog-service` possui uma representação de leitura da entidade `User` para validar a posse de favoritos.
 
 ---
 
-## 3. Entidades, Value Objects e Aggregates
+## 3. Entidades e Agregados
 
-Detalhamento tático focado no **Contexto de Catálogo**, mapeando como os objetos do ORM (Sequelize) se traduzem em conceitos de DDD.
+Abaixo, a distribuição das entidades principais por serviço.
 
-### Aggregate: Movie (Filme)
-O `Movie` atua como a raiz (Root) deste agregado, pois é a entidade central em torno da qual as outras giram.
+### No `auth-service`
+* **User (Root):** A autoridade máxima sobre os dados do usuário (email, senha, role). É aqui que usuários são criados e autenticados.
 
-* **Entities (Entidades):**
-    * **Movie (Root):** Possui identidade única (UUID) e ciclo de vida próprio.
-        * *Atributos:* `id`, `title`, `description`, `release_date`, `duration`.
-    * **MovieImage:** Entidade dependente que armazena referências visuais (poster/banner). Só faz sentido existir vinculada a um Filme.
-
-* **Value Objects (Objetos de Valor):**
-    * *Conceitual:* Atributos como `Rating` (classificação indicativa) ou `Genre` (gênero) são implementados como strings/inteiros no banco, mas conceitualmente representam Value Objects imutáveis.
-
-### Aggregate: Profissionais (Cast & Crew)
-Atores e Diretores são tratados como agregados independentes para permitir que existam sem estarem atrelados a um filme específico (reusabilidade).
-
-* **Entities:**
-    * **Actor:** Profissional de atuação. Identidade única (UUID).
-    * **Director:** Profissional de direção. Identidade única (UUID).
-
-### Relacionamentos entre Agregados
-As tabelas pivot do banco de dados representam as relações de domínio:
-
-* **Cast (Elenco):** Vincula `Movie` e `Actor`. No domínio, representa "Um ator interpretando um papel em um filme".
-* **DirectorMovie:** Vincula `Movie` e `Director`. Representa "A direção criativa de um filme".
+### No `catalog-service`
+* **Movie (Root):** Agregado principal do catálogo. Controla invariantes como data de lançamento e duração.
+    * *Entidades Filhas:* `MovieImage`.
+* **Cast & Crew:**
+    * **Actor** e **Director** são raízes de seus próprios agregados, permitindo que existam independentemente de filmes.
+* **Favorite:**
+    * Entidade associativa que liga um `User` (ID) a um `Movie` (ID).
+    * *Regra de Negócio:* Só é possível favoritar filmes existentes. A integridade é garantida pelo banco compartilhado.
