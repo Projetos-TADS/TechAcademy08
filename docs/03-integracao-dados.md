@@ -1,4 +1,4 @@
-# 🔌 Etapa 3: Integração, APIs e Dados
+# 🔌 Integração, APIs e Dados
 
 Esta seção documenta a interface de comunicação do sistema (API) e a estratégia de persistência de dados.
 
