@@ -1,4 +1,4 @@
-# 🏛️ Etapa 2: Estilos Arquiteturais e DDD
+# 🏛️ Estilos Arquiteturais e DDD
 
 Detalhamento da modelagem tática e estratégica do sistema sob a ótica do Domain-Driven Design (DDD).
 
