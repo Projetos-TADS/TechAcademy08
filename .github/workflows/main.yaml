@@ -1,0 +1,54 @@
+name: CI Pipeline (Quality Check)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # -------------------------------------------
+      # 1. Auth Service Checks
+      # -------------------------------------------
+      - name: Auth Service - Install Deps
+        run: cd services/auth-service && npm ci
+      
+      - name: Auth Service - Build (Type Check)
+        run: cd services/auth-service && npm run build
+      
+      - name: Auth Service - Run Tests
+        run: cd services/auth-service && npm test
+
+      # -------------------------------------------
+      # 2. Catalog Service Checks
+      # -------------------------------------------
+      - name: Catalog Service - Install Deps
+        run: cd services/catalog-service && npm ci
+      
+      - name: Catalog Service - Build (Type Check)
+        run: cd services/catalog-service && npm run build
+      
+      - name: Catalog Service - Run Tests
+        run: cd services/catalog-service && npm test
+
+      # -------------------------------------------
+      # 3. Frontend Checks
+      # -------------------------------------------
+      - name: Frontend - Install Deps
+        run: cd frontend && npm ci
+      
+      - name: Frontend - Lint Check
+        run: cd frontend && npm run lint
+        
+      # O teste do frontend foi removido temporariamente pois geralmente 
+      # requer configuração gráfica complexa em CI simples.
