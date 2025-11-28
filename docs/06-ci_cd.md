@@ -1,74 +1,57 @@
 # 🚀 Entrega Contínua (CI/CD)
 
-Esta seção define o pipeline de automação para testes, construção e deploy do sistema Blockbuster.
+Esta seção define o pipeline de automação para garantia de qualidade do código do sistema Blockbuster.
 
-## 1. Pipeline de CI/CD (Microsserviços)
+## 1. Pipeline de CI (Quality Gate)
 
-O pipeline foi configurado para testar e construir cada serviço independentemente, permitindo que falhas no serviço de Catálogo, por exemplo, não impeçam testes no serviço de Autenticação.
+Adotamos um fluxo de Integração Contínua (CI) focado na qualidade do código. O pipeline é acionado automaticamente a cada `push` para o repositório, garantindo que nenhuma alteração quebre a build ou os testes existentes.
 
 ### Visualização do Fluxo
-O diagrama abaixo ilustra a execução paralela dos jobs para cada microsserviço e para o frontend.
+O diagrama abaixo ilustra a validação automática dos microsserviços.
 
-![Pipeline CI/CD](./assets/pipeline-cicd.png)
+![Pipeline CI](./assets/pipeline-cicd.png)
 
-### Definição do Workflow (GitHub Actions)
+### Definição do Workflow
 
-O arquivo de configuração encontra-se em `.github/workflows/main.yml`. Ele orquestra os seguintes trabalhos:
+O arquivo de configuração `.github/workflows/main.yml` executa as seguintes verificações em um ambiente limpo (Ubuntu/Node.js):
 
-1.  **Microservices Checks (Paralelo):**
-    * **Auth Service:** Instalação, Build e Testes Unitários.
-    * **Catalog Service:** Instalação, Build e Testes Unitários.
-    * **Frontend:** Linting e Testes E2E.
-2.  **Build & Publish:**
-    * Gera 3 imagens Docker distintas: `techacademy-auth`, `techacademy-catalog` e `techacademy-frontend`.
-    * Envia para o Docker Hub apenas se todos os testes passarem.
-3.  **Deploy:**
-    * Conecta via SSH no servidor e atualiza os serviços definidos no `docker-compose.yaml`.
+1.  **Auth Service:**
+    * Instalação de dependências limpa (`npm ci`).
+    * Verificação de Tipagem Estática (TypeScript Build).
+    * Execução de Testes Unitários (Jest).
+2.  **Catalog Service:**
+    * Instalação, Build e Testes.
+3.  **Frontend:**
+    * Verificação de estilo de código (Linting).
 
----
-
-## 2. Estratégia de Deploy
-
-Mantemos a estratégia **Recreate (com Downtime Mínimo)** via Docker Compose, que é simples e eficiente para a escala atual.
-
-* **Comportamento:** Ao receber novas imagens, o Docker Compose recria apenas os containers que sofreram alterações.
-* **Rollback:** Para reverter, basta alterar a tag da imagem no arquivo `.env` ou `docker-compose.yaml` para a versão anterior e rodar `docker-compose up -d`.
+Se qualquer uma dessas etapas falhar, o commit é marcado como "Falho" (❌), alertando a equipe para correção imediata antes de qualquer merge.
 
 ---
 
-## 3. Runbook de Incidentes (Guia de Resposta)
+## 2. Estratégia de Execução Local
 
-Guia atualizado para depuração dos microsserviços em produção.
+Como o projeto é executado localmente para fins acadêmicos, a estratégia de "Deploy" consiste em:
 
-### 🚨 Incidente: Erro de Login (Auth Service)
-**Sintomas:** Usuário recebe erro 401 ou 500 ao tentar entrar. O Frontend não carrega o token.
+1.  **Pré-requisitos:** Ter Docker e Docker Compose instalados.
+2.  **Configuração:** Criar o arquivo `.env` na raiz com as credenciais locais.
+3.  **Execução:** Rodar o comando `docker-compose up --build`.
 
-1.  **Verificar Logs do Auth Service:**
-    ```bash
-    docker logs auth-service --tail 100
-    ```
-2.  **Ação Típica:** Verificar conexão com o banco ou expiração de chaves JWT.
+Esta abordagem garante que o ambiente de desenvolvimento seja reproduzível em qualquer máquina que possua Docker, simulando a containerização de produção.
 
-### 🚨 Incidente: Catálogo Vazio ou Lento (Catalog Service)
-**Sintomas:** Login funciona, mas a lista de filmes não carrega.
+---
 
-1.  **Verificar Logs do Catalog Service:**
-    ```bash
-    docker logs catalog-service --tail 100
-    ```
-2.  **Verificar Cache (Redis):**
-    * Se o Redis cair, o catálogo pode ficar lento (buscando direto no MySQL).
-    * Check: `docker logs redis_cache`
+## 3. Runbook de Incidentes (Desenvolvimento)
 
-### 🚨 Incidente: Erro Geral de Conexão (Gateway/Proxy)
-**Sintomas:** O site não abre ou dá "Bad Gateway" (502).
+Guia para resolver problemas comuns durante a execução local.
 
-1.  **Verificar Nginx:**
-    ```bash
-    docker logs nginx
-    ```
-2.  **Verificar se os containers estão de pé:**
-    ```bash
-    docker-compose ps
-    ```
-    * *Correção:* `docker-compose up -d --force-recreate <servico_caido>`
+### 🚨 Incidente: Erro de Conexão com Banco
+**Erro:** `Connection refused` ou `ECONNREFUSED` nos logs.
+**Causa:** O container do MySQL ainda não estava pronto quando o backend tentou conectar.
+**Solução:** O sistema possui *healthchecks*, aguarde alguns segundos que os containers irão reiniciar automaticamente até conectar.
+
+### 🚨 Incidente: Alterações não refletem
+**Sintomas:** Mudei o código mas o comportamento continua antigo.
+**Causa:** O Docker está usando uma imagem antiga em cache.
+**Solução:** Forçar a recriação do build:
+```bash
+docker-compose up -d --build
